@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mithai Match</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2D1B4E">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --bg1:#2D1B4E; --bg2:#4A2574;
+    --cream:#FFF8E7; --marigold:#FF9F1C; --rani:#E91E8C; --teal:#2EC4B6;
+    --ink:#2D1B4E;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:'Baloo 2','Segoe UI Rounded',system-ui,sans-serif;
+    background:radial-gradient(ellipse at top, var(--bg2), var(--bg1) 70%);
+    color:var(--cream);
+    display:flex; flex-direction:column; align-items:center;
+    min-height:100%;
+    padding:14px 10px 20px;
+    overflow-x:hidden;
+  }
+  .lights{
+    position:fixed; top:env(safe-area-inset-top,0px); left:0; right:0; height:6px;
+    background:repeating-linear-gradient(90deg,var(--marigold) 0 10px, transparent 10px 20px, var(--rani) 20px 30px, transparent 30px 40px);
+    opacity:.6; pointer-events:none;
+  }
+  h1{
+    font-size:1.7rem; font-weight:800; margin:10px 0 2px; letter-spacing:.5px;
+    color:var(--marigold); text-shadow:0 2px 0 rgba(0,0,0,.25);
+  }
+  .sub{font-size:.8rem; opacity:.75; margin-bottom:12px;}
+  .bar{
+    display:flex; gap:10px; width:100%; max-width:420px; margin-bottom:12px;
+  }
+  .stat{
+    flex:1; background:rgba(255,255,255,.08); border-radius:14px; padding:8px 10px;
+    text-align:center; border:1px solid rgba(255,255,255,.12);
+  }
+  .stat .n{font-size:1.3rem; font-weight:800; color:var(--cream);}
+  .stat.time .n{color:var(--teal);}
+  .stat.score .n{color:var(--marigold);}
+  .stat .l{font-size:.65rem; opacity:.7; text-transform:none;}
+  #board{
+    display:grid; grid-template-columns:repeat(8,1fr); gap:5px;
+    width:100%; max-width:420px; aspect-ratio:1/1;
+    background:rgba(0,0,0,.25); border-radius:18px; padding:8px;
+    box-shadow:inset 0 2px 10px rgba(0,0,0,.4);
+    touch-action:none;
+  }
+  .tile{
+    position:relative; display:flex; align-items:center; justify-content:center;
+    background:var(--cream); border-radius:10px; font-size:clamp(1.1rem,5vw,1.6rem);
+    cursor:pointer; user-select:none;
+    box-shadow:0 3px 0 rgba(0,0,0,.15);
+    transition:transform 120ms ease, opacity 140ms ease, background 120ms;
+    will-change:transform;
+  }
+  .tile.sel{
+    outline:3px solid var(--teal); transform:scale(1.08); z-index:2;
+  }
+  .tile.clear{
+    transform:scale(0); opacity:0;
+  }
+  .tile.drop{
+    animation:drop 180ms ease-out;
+  }
+  @keyframes drop{ from{transform:translateY(-40px); opacity:.4;} to{transform:translateY(0); opacity:1;} }
+  .tile.bad{ animation:shake 220ms; }
+  @keyframes shake{ 25%{transform:translateX(-4px);} 75%{transform:translateX(4px);} }
+
+  #msg{
+    margin-top:14px; font-size:.95rem; min-height:1.4em; color:var(--teal); font-weight:700;
+  }
+  #restart{
+    margin-top:10px; background:var(--rani); color:#fff; border:none; border-radius:12px;
+    padding:10px 22px; font-family:inherit; font-weight:700; font-size:.95rem;
+    box-shadow:0 3px 0 rgba(0,0,0,.25); cursor:pointer; display:none;
+  }
+  :root:not([data-theme="light"]) body{}
+</style>
+</head>
+<body>
+<div class="lights"></div>
+<h1>Mithai Match</h1>
+<div class="sub">Samose, jalebi, laddoo jaldi milao — candy-crush speed mein!</div>
+
+<div class="bar">
+  <div class="stat time"><div class="n" id="timeN">20</div><div class="l">moves left</div></div>
+  <div class="stat score"><div class="n" id="scoreN">0</div><div class="l">score</div></div>
+  <div class="stat"><div class="n" id="bestN">0</div><div class="l">best</div></div>
+</div>
+
+<div id="board"></div>
+<div id="msg"></div>
+<button id="restart">Fir se khelo</button>
+
+<script>
+const ITEMS = ['🥟','🍩','☕','🍡','🌶️','🍮'];
+const SIZE = 8;
+let grid = [];
+let selected = null;
+let score = 0, best = 0, movesLeft = 20, running = true, busy = false;
+
+const boardEl = document.getElementById('board');
+const scoreEl = document.getElementById('scoreN');
+const timeEl = document.getElementById('timeN');
+const bestEl = document.getElementById('bestN');
+const msgEl = document.getElementById('msg');
+const restartBtn = document.getElementById('restart');
+
+try{ best = parseInt(localStorage.getItem('mithaiBest')||'0',10)||0; }catch(e){ best = 0; }
+bestEl.textContent = best;
+
+function idx(r,c){ return r*SIZE+c; }
+
+function randomItem(){ return ITEMS[Math.floor(Math.random()*ITEMS.length)]; }
+
+function makeGrid(){
+  grid = [];
+  for(let r=0;r<SIZE;r++){
+    const row=[];
+    for(let c=0;c<SIZE;c++){
+      let v;
+      do{ v = randomItem(); }
+      while(
+        (c>=2 && row[c-1]===v && row[c-2]===v) ||
+        (r>=2 && grid[r-1][c]===v && grid[r-2][c]===v)
+      );
+      row.push(v);
+    }
+    grid.push(row);
+  }
+}
+
+function render(){
+  boardEl.innerHTML = '';
+  for(let r=0;r<SIZE;r++){
+    for(let c=0;c<SIZE;c++){
+      const t = document.createElement('div');
+      t.className = 'tile';
+      t.textContent = grid[r][c] || '';
+      t.dataset.r = r; t.dataset.c = c;
+      t.addEventListener('click', onTileClick);
+      boardEl.appendChild(t);
+    }
+  }
+}
+
+function tileEl(r,c){
+  return boardEl.children[idx(r,c)];
+}
+
+function onTileClick(e){
+  if(busy || !running) return;
+  const r = +e.currentTarget.dataset.r, c = +e.currentTarget.dataset.c;
+  if(!selected){
+    selected = {r,c};
+    e.currentTarget.classList.add('sel');
+    return;
+  }
+  const {r:r0,c:c0} = selected;
+  tileEl(r0,c0).classList.remove('sel');
+  if(r0===r && c0===c){ selected=null; return; }
+  const adjacent = (Math.abs(r0-r)+Math.abs(c0-c))===1;
+  selected = null;
+  if(!adjacent) return;
+  trySwap(r0,c0,r,c);
+}
+
+function swapVals(r0,c0,r1,c1){
+  const tmp = grid[r0][c0]; grid[r0][c0]=grid[r1][c1]; grid[r1][c1]=tmp;
+}
+
+function trySwap(r0,c0,r1,c1){
+  busy = true;
+  swapVals(r0,c0,r1,c1);
+  const matches = findMatches();
+  if(matches.size===0){
+    swapVals(r0,c0,r1,c1);
+    tileEl(r0,c0).classList.add('bad');
+    tileEl(r1,c1).classList.add('bad');
+    setTimeout(()=>{
+      tileEl(r0,c0).classList.remove('bad');
+      tileEl(r1,c1).classList.remove('bad');
+      busy=false;
+    },220);
+  } else {
+    movesLeft--;
+    timeEl.textContent = movesLeft;
+    render();
+    setTimeout(()=>resolveMatches(),60);
+  }
+}
+
+function findMatches(){
+  const hits = new Set();
+  for(let r=0;r<SIZE;r++){
+    let run=1;
+    for(let c=1;c<=SIZE;c++){
+      if(c<SIZE && grid[r][c] && grid[r][c]===grid[r][c-1]) run++;
+      else{
+        if(run>=3) for(let k=0;k<run;k++) hits.add(idx(r,c-1-k));
+        run=1;
+      }
+    }
+  }
+  for(let c=0;c<SIZE;c++){
+    let run=1;
+    for(let r=1;r<=SIZE;r++){
+      if(r<SIZE && grid[r][c] && grid[r][c]===grid[r-1][c]) run++;
+      else{
+        if(run>=3) for(let k=0;k<run;k++) hits.add(idx(r-1-k,c));
+        run=1;
+      }
+    }
+  }
+  return hits;
+}
+
+function resolveMatches(){
+  const matches = findMatches();
+  if(matches.size===0){ busy=false; checkMoves(); return; }
+  matches.forEach(i=>{
+    const r=Math.floor(i/SIZE), c=i%SIZE;
+    grid[r][c] = null;
+    const el = tileEl(r,c);
+    if(el) el.classList.add('clear');
+  });
+  score += matches.size*10;
+  scoreEl.textContent = score;
+  setTimeout(()=>{
+    dropAndFill();
+    render();
+    setTimeout(()=>resolveMatches(),80);
+  },160);
+}
+
+function dropAndFill(){
+  for(let c=0;c<SIZE;c++){
+    let write = SIZE-1;
+    for(let r=SIZE-1;r>=0;r--){
+      if(grid[r][c] !== null){
+        grid[write][c] = grid[r][c];
+        write--;
+      }
+    }
+    for(let r=write;r>=0;r--){ grid[r][c] = randomItem(); }
+  }
+}
+
+function checkMoves(){
+  if(movesLeft<=0) endGame();
+}
+
+function endGame(){
+  running = false;
+  if(score>best){ best=score; try{ localStorage.setItem('mithaiBest', String(best)); }catch(e){} }
+  bestEl.textContent = best;
+  msgEl.textContent = 'Moves khatam! Score: ' + score;
+  restartBtn.style.display = 'inline-block';
+}
+
+restartBtn.addEventListener('click', ()=>{
+  score=0; movesLeft=20; running=true; busy=false; selected=null;
+  scoreEl.textContent='0'; timeEl.textContent='20';
+  msgEl.textContent=''; restartBtn.style.display='none';
+  makeGrid(); render();
+});
+
+makeGrid();
+render();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>

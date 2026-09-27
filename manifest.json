@@ -1,0 +1,13 @@
+{
+  "name": "Mithai Match",
+  "short_name": "Mithai Match",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#2D1B4E",
+  "theme_color": "#2D1B4E",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
